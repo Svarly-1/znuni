@@ -16,9 +16,14 @@
 <!-- Schritt 1: Person wählen -->
 <div class="card" id="personCard">
   <h2>Wer bist du?</h2>
-  <select id="personSelect">
-    <option value="">-- bitte wählen --</option>
-  </select>
+  <div id="personSearchWrap">
+    <input type="text" id="personSearch" placeholder="Name suchen…" autocomplete="off">
+    <div class="chips" id="personResults"></div>
+  </div>
+  <div class="status hidden" id="personSelectedWrap" style="text-align:left;">
+    Ausgewählt: <b id="personSelectedName"></b>
+    <button class="secondary" id="changePersonBtn" style="width:auto;padding:4px 10px;margin:6px 0 0;">Ändern</button>
+  </div>
 </div>
 
 <!-- Schritt 2: Bestellformular -->
@@ -33,17 +38,24 @@
   <div class="status" id="submitStatus"></div>
 </div>
 
-<!-- Schritt 3: Bestätigung + QR -->
+<!-- Schritt 3: Bestätigung + Zahlung -->
 <div class="card hidden" id="confirmCard">
   <h2>Bestellung erhalten ✓</h2>
   <p style="font-size:0.9rem;color:var(--text-dim);">
     Dein Betrag: <b id="confirmAmount">0.00 CHF</b><br>
-    Heute holt <b id="shopperName">–</b> ein. Bezahl direkt per Twint mit dem Nummern unten.
+    Heute holt <b id="shopperName">–</b> ein. Bezahl direkt per Twint an die Nummer unten.
   </p>
   <div class="qr-box">
-    <img id="qrImg" src="" alt="Twint QR Code">
+    <img id="qrImg" src="" alt="Foto">
+    <div class="status" id="shopperPhone" style="font-size:0.95rem;font-weight:600;margin-top:8px;"></div>
   </div>
+  <button class="secondary" id="tipBtn">💛 Trinkgeld geben</button>
+  <div class="status hidden" id="tipBox" style="font-weight:600;"></div>
   <button class="secondary" id="editBtn">Bestellung bearbeiten</button>
+</div>
+
+<div class="sub" style="text-align:center;margin-top:24px;">
+  Bei Fragen oder Wünschen für die Einkaufsliste: <a href="mailto:hueseyin.oezel@infra-com.ch" style="color:var(--accent);">Hüseyin (hueseyin.oezel@infra-com.ch)</a>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
@@ -62,7 +74,10 @@ const bannerEl = document.getElementById('banner');
 const personCard = document.getElementById('personCard');
 const orderCard = document.getElementById('orderCard');
 const confirmCard = document.getElementById('confirmCard');
-const personSelect = document.getElementById('personSelect');
+const personSearch = document.getElementById('personSearch');
+const personResultsEl = document.getElementById('personResults');
+const personSearchWrap = document.getElementById('personSearchWrap');
+const personSelectedWrap = document.getElementById('personSelectedWrap');
 const productListEl = document.getElementById('productList');
 const totalAmountEl = document.getElementById('totalAmount');
 const submitBtn = document.getElementById('submitBtn');
@@ -80,15 +95,47 @@ function renderBanner() {
   submitBtn.disabled = cutoffReached;
 }
 
-function renderPersonOptions() {
-  personSelect.innerHTML = '<option value="">-- bitte wählen --</option>';
-  people.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = p.name;
-    personSelect.appendChild(opt);
+function renderPersonSearchResults(query) {
+  const q = query.trim().toLowerCase();
+  personResultsEl.innerHTML = '';
+  if (!q) return;
+  const matches = people.filter(p => p.name.toLowerCase().includes(q)).slice(0, 8);
+  if (matches.length === 0) {
+    personResultsEl.innerHTML = '<div class="empty" style="padding:4px 0;">Keine Treffer.</div>';
+    return;
+  }
+  matches.forEach(p => {
+    const chip = document.createElement('div');
+    chip.className = 'chip';
+    chip.textContent = p.name;
+    chip.onclick = () => selectPerson(p);
+    personResultsEl.appendChild(chip);
   });
 }
+
+personSearch.oninput = () => renderPersonSearchResults(personSearch.value);
+
+async function selectPerson(person) {
+  selectedPersonId = person.id;
+  personSearch.value = '';
+  personResultsEl.innerHTML = '';
+  personSearchWrap.classList.add('hidden');
+  personSelectedWrap.classList.remove('hidden');
+  document.getElementById('personSelectedName').textContent = person.name;
+  confirmCard.classList.add('hidden');
+  orderCard.classList.remove('hidden');
+  await loadOrderIntoForm(selectedPersonId);
+}
+
+document.getElementById('changePersonBtn').onclick = () => {
+  selectedPersonId = '';
+  personSelectedWrap.classList.add('hidden');
+  personSearchWrap.classList.remove('hidden');
+  orderCard.classList.add('hidden');
+  confirmCard.classList.add('hidden');
+  personSearch.value = '';
+  personSearch.focus();
+};
 
 function renderProducts() {
   if (products.length === 0) {
@@ -153,18 +200,6 @@ async function loadOrderIntoForm(personId) {
   renderProducts();
 }
 
-personSelect.onchange = async () => {
-  selectedPersonId = personSelect.value;
-  if (!selectedPersonId) {
-    orderCard.classList.add('hidden');
-    confirmCard.classList.add('hidden');
-    return;
-  }
-  confirmCard.classList.add('hidden');
-  orderCard.classList.remove('hidden');
-  await loadOrderIntoForm(selectedPersonId);
-};
-
 submitBtn.onclick = async () => {
   if (!selectedPersonId) return;
   if (cutoffReached) {
@@ -206,9 +241,18 @@ function showConfirmation(total) {
   const validShopperToday = settings.todayDate === todayStr() && shopper;
   document.getElementById('shopperName').textContent = validShopperToday ? shopper.name : '(noch nicht festgelegt)';
   document.getElementById('qrImg').src = validShopperToday && shopper.qrBase64 ? shopper.qrBase64 : '';
+  document.getElementById('shopperPhone').textContent = validShopperToday && shopper.phone ? 'Twint: ' + shopper.phone : '';
+  document.getElementById('tipBox').classList.add('hidden');
+  document.getElementById('tipBox').textContent = validShopperToday && shopper.phone
+    ? 'Trinkgeld ebenfalls an: ' + shopper.phone
+    : 'Nummer noch nicht hinterlegt.';
   orderCard.classList.add('hidden');
   confirmCard.classList.remove('hidden');
 }
+
+document.getElementById('tipBtn').onclick = () => {
+  document.getElementById('tipBox').classList.toggle('hidden');
+};
 
 document.getElementById('editBtn').onclick = () => {
   confirmCard.classList.add('hidden');
@@ -218,8 +262,6 @@ document.getElementById('editBtn').onclick = () => {
 // ---------- Firestore Live-Verbindungen ----------
 db.collection('people').orderBy('name').onSnapshot(snap => {
   people = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  renderPersonOptions();
-  if (selectedPersonId) personSelect.value = selectedPersonId;
 });
 
 db.collection('products').where('active', '==', true).onSnapshot(snap => {

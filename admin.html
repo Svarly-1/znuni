@@ -9,7 +9,7 @@
 <body>
 
 <h1>⚙️ Znüni Verwaltung</h1>
-<div class="sub"> Hier verwaltest du Personen, Produkte, QR-Codes und die Reihenfolge.</div>
+<div class="sub">Nur für euch 4 – hier verwaltet ihr Personen, Produkte, Fotos, Telefonnummern und die Reihenfolge.</div>
 
 <!-- Heute holt ein -->
 <div class="card">
@@ -43,7 +43,8 @@
 <div class="card">
   <h2>Personen</h2>
   <div class="row" style="display:flex;gap:8px;margin-bottom:10px;">
-    <input type="text" id="newPersonName" placeholder="Name" style="flex:1;margin-bottom:0;">
+    <input type="text" id="newPersonName" placeholder="Name" style="flex:1.2;margin-bottom:0;">
+    <input type="text" id="newPersonPhone" placeholder="Telefonnr. (optional)" style="flex:1;margin-bottom:0;">
     <button class="primary" style="width:auto;padding:10px 16px;" id="addPersonBtn">+</button>
   </div>
   <div id="peopleList"></div>
@@ -135,14 +136,20 @@ function renderPeopleList() {
     const row = document.createElement('div');
     row.className = 'list-row';
     row.innerHTML = `
-      <img src="${p.qrBase64 || ''}" onerror="this.style.visibility='hidden'" title="Twint QR">
-      <span class="name">${escapeHtml(p.name)} ${p.qrBase64 ? '' : '<span class="tag">kein QR</span>'}</span>
+      <img src="${p.qrBase64 || ''}" onerror="this.style.visibility='hidden'" title="Foto">
+      <span class="name">${escapeHtml(p.name)} ${p.qrBase64 ? '' : '<span class="tag">kein Foto</span>'}</span>
+      <input type="text" class="phoneEdit" data-id="${p.id}" value="${escapeHtml(p.phone || '')}" placeholder="Telefonnr." style="max-width:110px;font-size:0.8rem;margin-bottom:0;">
       <label style="margin:0;">
-        <input type="file" accept="image/*" data-id="${p.id}" class="qrUpload" style="max-width:130px;font-size:0.75rem;">
+        <input type="file" accept="image/*" data-id="${p.id}" class="qrUpload" style="max-width:110px;font-size:0.72rem;">
       </label>
       <button class="rm-btn" data-id="${p.id}" data-name="${escapeHtml(p.name)}">✕</button>
     `;
     listEl.appendChild(row);
+  });
+  listEl.querySelectorAll('.phoneEdit').forEach(input => {
+    input.onchange = async () => {
+      await db.collection('people').doc(input.dataset.id).update({ phone: input.value.trim() });
+    };
   });
   listEl.querySelectorAll('.qrUpload').forEach(input => {
     input.onchange = async (e) => {
@@ -161,11 +168,14 @@ function renderPeopleList() {
 }
 
 document.getElementById('addPersonBtn').onclick = async () => {
-  const input = document.getElementById('newPersonName');
-  const name = input.value.trim();
+  const nameInput = document.getElementById('newPersonName');
+  const phoneInput = document.getElementById('newPersonPhone');
+  const name = nameInput.value.trim();
+  const phone = phoneInput.value.trim();
   if (!name) return;
-  await db.collection('people').add({ name, qrBase64: null });
-  input.value = '';
+  await db.collection('people').add({ name, phone: phone || null, qrBase64: null });
+  nameInput.value = '';
+  phoneInput.value = '';
 };
 
 db.collection('people').orderBy('name').onSnapshot(snap => {
