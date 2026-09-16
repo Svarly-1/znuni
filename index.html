@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Znüni Bestellung</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>🥐 Znüni Bestellung</h1>
+<div class="sub">Wähle dich aus, bestelle, und bezahle direkt per Twint.</div>
+
+<div id="banner" class="banner">Lade…</div>
+
+<!-- Schritt 1: Person wählen -->
+<div class="card" id="personCard">
+  <h2>Wer bist du?</h2>
+  <select id="personSelect">
+    <option value="">-- bitte wählen --</option>
+  </select>
+</div>
+
+<!-- Schritt 2: Bestellformular -->
+<div class="card hidden" id="orderCard">
+  <h2>Was möchtest du bestellen?</h2>
+  <div id="productList"><div class="empty">Lade Produkte…</div></div>
+  <div class="total-row">
+    <span>Total</span>
+    <span id="totalAmount">0.00 CHF</span>
+  </div>
+  <button class="primary" id="submitBtn">Bestellung senden</button>
+  <div class="status" id="submitStatus"></div>
+</div>
+
+<!-- Schritt 3: Bestätigung + QR -->
+<div class="card hidden" id="confirmCard">
+  <h2>Bestellung erhalten ✓</h2>
+  <p style="font-size:0.9rem;color:var(--text-dim);">
+    Dein Betrag: <b id="confirmAmount">0.00 CHF</b><br>
+    Heute holt <b id="shopperName">–</b> ein. Bezahl direkt per Twint mit dem QR-Code unten.
+  </p>
+  <div class="qr-box">
+    <img id="qrImg" src="" alt="Twint QR Code">
+  </div>
+  <button class="secondary" id="editBtn">Bestellung bearbeiten</button>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="app-common.js"></script>
+<script>
+let settings = { cutoffTime: '08:30', todayShopperId: null, todayDate: null };
+let people = [];
+let products = [];
+let selectedPersonId = '';
+let qtyMap = {}; // productId -> qty
+let cutoffReached = false;
+
+const bannerEl = document.getElementById('banner');
+const personCard = document.getElementById('personCard');
+const orderCard = document.getElementById('orderCard');
+const confirmCard = document.getElementById('confirmCard');
+const personSelect = document.getElementById('personSelect');
+const productListEl = document.getElementById('productList');
+const totalAmountEl = document.getElementById('totalAmount');
+const submitBtn = document.getElementById('submitBtn');
+const submitStatus = document.getElementById('submitStatus');
+
+function renderBanner() {
+  cutoffReached = isPastCutoff(settings.cutoffTime);
+  if (cutoffReached) {
+    bannerEl.className = 'banner closed';
+    bannerEl.textContent = `Bestellzeit vorbei (Annahmeschluss war ${settings.cutoffTime} Uhr). Bestellungen für heute sind geschlossen.`;
+  } else {
+    bannerEl.className = 'banner open';
+    bannerEl.textContent = `Bestellungen offen bis ${settings.cutoffTime} Uhr.`;
+  }
+  submitBtn.disabled = cutoffReached;
+}
+
+function renderPersonOptions() {
+  personSelect.innerHTML = '<option value="">-- bitte wählen --</option>';
+  people.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name;
+    personSelect.appendChild(opt);
+  });
+}
+
+function renderProducts() {
+  if (products.length === 0) {
+    productListEl.innerHTML = '<div class="empty">Noch keine Produkte im Angebot.</div>';
+    return;
+  }
+  productListEl.innerHTML = '';
+  products.forEach(p => {
+    const qty = qtyMap[p.id] || 0;
+    const row = document.createElement('div');
+    row.className = 'product';
+    row.innerHTML = `
+      <img src="${p.photoBase64 || ''}" onerror="this.style.visibility='hidden'">
+      <div class="info">
+        <div class="pname">${escapeHtml(p.name)}</div>
+        <div class="pprice">${fmt(p.price)} CHF</div>
+      </div>
+      <div class="qty-control">
+        <button class="minus" data-id="${p.id}">−</button>
+        <span id="qty-${p.id}">${qty}</span>
+        <button class="plus" data-id="${p.id}">+</button>
+      </div>
+    `;
+    productListEl.appendChild(row);
+  });
+  productListEl.querySelectorAll('.plus').forEach(btn => {
+    btn.onclick = () => changeQty(btn.dataset.id, 1);
+  });
+  productListEl.querySelectorAll('.minus').forEach(btn => {
+    btn.onclick = () => changeQty(btn.dataset.id, -1);
+  });
+  updateTotal();
+}
+
+function changeQty(id, delta) {
+  const current = qtyMap[id] || 0;
+  const next = Math.max(0, current + delta);
+  qtyMap[id] = next;
+  document.getElementById('qty-' + id).textContent = next;
+  updateTotal();
+}
+
+function updateTotal() {
+  let total = 0;
+  products.forEach(p => {
+    total += (qtyMap[p.id] || 0) * p.price;
+  });
+  totalAmountEl.textContent = fmt(total) + ' CHF';
+  return total;
+}
+
+async function loadOrderIntoForm(personId) {
+  qtyMap = {};
+  try {
+    const docId = todayStr() + '_' + personId;
+    const snap = await db.collection('orders').doc(docId).get();
+    if (snap.exists) {
+      const data = snap.data();
+      (data.items || []).forEach(it => { qtyMap[it.productId] = it.qty; });
+    }
+  } catch (e) { /* ignore */ }
+  renderProducts();
+}
+
+personSelect.onchange = async () => {
+  selectedPersonId = personSelect.value;
+  if (!selectedPersonId) {
+    orderCard.classList.add('hidden');
+    confirmCard.classList.add('hidden');
+    return;
+  }
+  confirmCard.classList.add('hidden');
+  orderCard.classList.remove('hidden');
+  await loadOrderIntoForm(selectedPersonId);
+};
+
+submitBtn.onclick = async () => {
+  if (!selectedPersonId) return;
+  if (cutoffReached) {
+    submitStatus.textContent = 'Bestellzeit ist vorbei.';
+    return;
+  }
+  const items = [];
+  products.forEach(p => {
+    const qty = qtyMap[p.id] || 0;
+    if (qty > 0) items.push({ productId: p.id, name: p.name, price: p.price, qty });
+  });
+  if (items.length === 0) {
+    submitStatus.textContent = 'Bitte wähle mindestens ein Produkt.';
+    return;
+  }
+  const total = updateTotal();
+  const person = people.find(p => p.id === selectedPersonId);
+  submitStatus.textContent = 'Sende…';
+  try {
+    const docId = todayStr() + '_' + selectedPersonId;
+    await db.collection('orders').doc(docId).set({
+      date: todayStr(),
+      personId: selectedPersonId,
+      personName: person ? person.name : '',
+      items,
+      total,
+      updatedAt: new Date().toISOString()
+    });
+    submitStatus.textContent = '';
+    showConfirmation(total);
+  } catch (e) {
+    submitStatus.textContent = 'Fehler beim Senden. Versuch es nochmal.';
+  }
+};
+
+function showConfirmation(total) {
+  document.getElementById('confirmAmount').textContent = fmt(total) + ' CHF';
+  const shopper = people.find(p => p.id === settings.todayShopperId);
+  const validShopperToday = settings.todayDate === todayStr() && shopper;
+  document.getElementById('shopperName').textContent = validShopperToday ? shopper.name : '(noch nicht festgelegt)';
+  document.getElementById('qrImg').src = validShopperToday && shopper.qrBase64 ? shopper.qrBase64 : '';
+  orderCard.classList.add('hidden');
+  confirmCard.classList.remove('hidden');
+}
+
+document.getElementById('editBtn').onclick = () => {
+  confirmCard.classList.add('hidden');
+  orderCard.classList.remove('hidden');
+};
+
+// ---------- Firestore Live-Verbindungen ----------
+db.collection('people').orderBy('name').onSnapshot(snap => {
+  people = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  renderPersonOptions();
+  if (selectedPersonId) personSelect.value = selectedPersonId;
+});
+
+db.collection('products').where('active', '==', true).onSnapshot(snap => {
+  products = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  renderProducts();
+});
+
+db.doc('settings/config').onSnapshot(snap => {
+  if (snap.exists) {
+    settings = { cutoffTime: '08:30', todayShopperId: null, todayDate: null, ...snap.data() };
+  }
+  renderBanner();
+});
+
+setInterval(renderBanner, 30000); // Uhrzeit-Check alle 30s
+</script>
+</body>
+</html>

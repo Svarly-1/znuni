@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Znüni Verwaltung</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h1>⚙️ Znüni Verwaltung</h1>
+<div class="sub">Nur für euch 4 – hier verwaltet ihr Personen, Produkte, QR-Codes und die Reihenfolge.</div>
+
+<!-- Heute holt ein -->
+<div class="card">
+  <h2>Wer holt heute ein?</h2>
+  <select id="shopperSelect">
+    <option value="">-- bitte wählen --</option>
+  </select>
+  <button class="primary" id="setShopperBtn">Für heute festlegen</button>
+  <div class="status" id="shopperStatus"></div>
+</div>
+
+<!-- Annahmeschluss -->
+<div class="card">
+  <h2>Annahmeschluss für Bestellungen</h2>
+  <input type="time" id="cutoffInput" value="08:30">
+  <button class="primary" id="setCutoffBtn">Speichern</button>
+  <div class="status" id="cutoffStatus"></div>
+</div>
+
+<!-- Heutige Bestellungen -->
+<div class="card">
+  <h2>Heutige Bestellungen</h2>
+  <div id="todayOrders"><div class="empty">Lade…</div></div>
+  <div class="summary-row" style="margin-top:6px;">
+    <span><b>Gesamttotal</b></span>
+    <span class="val" id="grandTotal">0.00 CHF</span>
+  </div>
+</div>
+
+<!-- Personen -->
+<div class="card">
+  <h2>Personen</h2>
+  <div class="row" style="display:flex;gap:8px;margin-bottom:10px;">
+    <input type="text" id="newPersonName" placeholder="Name" style="flex:1;margin-bottom:0;">
+    <button class="primary" style="width:auto;padding:10px 16px;" id="addPersonBtn">+</button>
+  </div>
+  <div id="peopleList"></div>
+</div>
+
+<!-- Produkte -->
+<div class="card">
+  <h2>Produkt hinzufügen</h2>
+  <label>Name</label>
+  <input type="text" id="newProdName" placeholder="z.B. Gipfeli">
+  <label>Preis (CHF)</label>
+  <input type="number" step="0.05" id="newProdPrice" placeholder="0.00">
+  <label>Foto (optional)</label>
+  <div class="file-input-wrap">
+    <input type="file" id="newProdPhoto" accept="image/*">
+  </div>
+  <button class="primary" id="addProdBtn">Produkt speichern</button>
+  <div class="status" id="prodStatus"></div>
+</div>
+
+<div class="card">
+  <h2>Produktliste</h2>
+  <div id="productList"></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="app-common.js"></script>
+<script>
+let people = [];
+let products = [];
+let todayOrdersData = [];
+
+// ---------- Wer holt heute ein ----------
+const shopperSelect = document.getElementById('shopperSelect');
+document.getElementById('setShopperBtn').onclick = async () => {
+  const id = shopperSelect.value;
+  const statusEl = document.getElementById('shopperStatus');
+  if (!id) { statusEl.textContent = 'Bitte eine Person wählen.'; return; }
+  statusEl.textContent = 'Speichere…';
+  try {
+    await db.doc('settings/config').set({ todayShopperId: id, todayDate: todayStr() }, { merge: true });
+    statusEl.textContent = 'Gespeichert ✓';
+    setTimeout(() => statusEl.textContent = '', 2000);
+  } catch (e) { statusEl.textContent = 'Fehler.'; }
+};
+
+// ---------- Annahmeschluss ----------
+document.getElementById('setCutoffBtn').onclick = async () => {
+  const val = document.getElementById('cutoffInput').value;
+  const statusEl = document.getElementById('cutoffStatus');
+  if (!val) { statusEl.textContent = 'Bitte eine Zeit wählen.'; return; }
+  statusEl.textContent = 'Speichere…';
+  try {
+    await db.doc('settings/config').set({ cutoffTime: val }, { merge: true });
+    statusEl.textContent = 'Gespeichert ✓';
+    setTimeout(() => statusEl.textContent = '', 2000);
+  } catch (e) { statusEl.textContent = 'Fehler.'; }
+};
+
+db.doc('settings/config').onSnapshot(snap => {
+  if (snap.exists) {
+    const data = snap.data();
+    if (data.cutoffTime) document.getElementById('cutoffInput').value = data.cutoffTime;
+    if (data.todayShopperId && data.todayDate === todayStr()) {
+      shopperSelect.value = data.todayShopperId;
+    }
+  }
+});
+
+// ---------- Personen ----------
+function renderPeopleList() {
+  shopperSelect.innerHTML = '<option value="">-- bitte wählen --</option>';
+  people.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name;
+    shopperSelect.appendChild(opt);
+  });
+
+  const listEl = document.getElementById('peopleList');
+  if (people.length === 0) {
+    listEl.innerHTML = '<div class="empty">Noch keine Personen erfasst.</div>';
+    return;
+  }
+  listEl.innerHTML = '';
+  people.forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'list-row';
+    row.innerHTML = `
+      <img src="${p.qrBase64 || ''}" onerror="this.style.visibility='hidden'" title="Twint QR">
+      <span class="name">${escapeHtml(p.name)} ${p.qrBase64 ? '' : '<span class="tag">kein QR</span>'}</span>
+      <label style="margin:0;">
+        <input type="file" accept="image/*" data-id="${p.id}" class="qrUpload" style="max-width:130px;font-size:0.75rem;">
+      </label>
+      <button class="rm-btn" data-id="${p.id}" data-name="${escapeHtml(p.name)}">✕</button>
+    `;
+    listEl.appendChild(row);
+  });
+  listEl.querySelectorAll('.qrUpload').forEach(input => {
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const base64 = await fileToCompressedBase64(file, 500, 0.9);
+      await db.collection('people').doc(input.dataset.id).update({ qrBase64: base64 });
+    };
+  });
+  listEl.querySelectorAll('.rm-btn').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm(`"${btn.dataset.name}" wirklich entfernen?`)) return;
+      await db.collection('people').doc(btn.dataset.id).delete();
+    };
+  });
+}
+
+document.getElementById('addPersonBtn').onclick = async () => {
+  const input = document.getElementById('newPersonName');
+  const name = input.value.trim();
+  if (!name) return;
+  await db.collection('people').add({ name, qrBase64: null });
+  input.value = '';
+};
+
+db.collection('people').orderBy('name').onSnapshot(snap => {
+  people = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  renderPeopleList();
+  renderTodayOrders();
+});
+
+// ---------- Produkte ----------
+document.getElementById('addProdBtn').onclick = async () => {
+  const name = document.getElementById('newProdName').value.trim();
+  const price = parseFloat(document.getElementById('newProdPrice').value);
+  const fileInput = document.getElementById('newProdPhoto');
+  const statusEl = document.getElementById('prodStatus');
+  if (!name || isNaN(price) || price <= 0) {
+    statusEl.textContent = 'Bitte Name und gültigen Preis angeben.';
+    return;
+  }
+  statusEl.textContent = 'Speichere…';
+  try {
+    let photoBase64 = null;
+    if (fileInput.files[0]) {
+      photoBase64 = await fileToCompressedBase64(fileInput.files[0], 300, 0.75);
+    }
+    await db.collection('products').add({ name, price, photoBase64, active: true });
+    document.getElementById('newProdName').value = '';
+    document.getElementById('newProdPrice').value = '';
+    fileInput.value = '';
+    statusEl.textContent = 'Gespeichert ✓';
+    setTimeout(() => statusEl.textContent = '', 2000);
+  } catch (e) {
+    statusEl.textContent = 'Fehler beim Speichern.';
+  }
+};
+
+function renderProductList() {
+  const el = document.getElementById('productList');
+  if (products.length === 0) {
+    el.innerHTML = '<div class="empty">Noch keine Produkte.</div>';
+    return;
+  }
+  el.innerHTML = '';
+  products.forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'list-row';
+    row.innerHTML = `
+      <img src="${p.photoBase64 || ''}" onerror="this.style.visibility='hidden'">
+      <span class="name">${escapeHtml(p.name)} <span class="tag">${fmt(p.price)} CHF</span> ${p.active ? '' : '<span class="tag" style="background:var(--red-bg);color:var(--red);">inaktiv</span>'}</span>
+      <button class="rm-btn toggle-btn" data-id="${p.id}" data-active="${p.active}" title="${p.active ? 'Deaktivieren' : 'Aktivieren'}">${p.active ? '👁️' : '🚫'}</button>
+      <button class="rm-btn" data-id="${p.id}" data-name="${escapeHtml(p.name)}">✕</button>
+    `;
+    el.appendChild(row);
+  });
+  el.querySelectorAll('.toggle-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const active = btn.dataset.active === 'true';
+      await db.collection('products').doc(btn.dataset.id).update({ active: !active });
+    };
+  });
+  el.querySelectorAll('.rm-btn:not(.toggle-btn)').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm(`"${btn.dataset.name}" wirklich löschen?`)) return;
+      await db.collection('products').doc(btn.dataset.id).delete();
+    };
+  });
+}
+
+db.collection('products').orderBy('name').onSnapshot(snap => {
+  products = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  renderProductList();
+});
+
+// ---------- Heutige Bestellungen ----------
+function renderTodayOrders() {
+  const el = document.getElementById('todayOrders');
+  if (todayOrdersData.length === 0) {
+    el.innerHTML = '<div class="empty">Noch keine Bestellungen heute.</div>';
+    document.getElementById('grandTotal').textContent = '0.00 CHF';
+    return;
+  }
+  el.innerHTML = '';
+  let grand = 0;
+  todayOrdersData.forEach(o => {
+    grand += o.total;
+    const itemsStr = (o.items || []).map(i => `${i.qty}× ${i.name}`).join(', ');
+    const row = document.createElement('div');
+    row.className = 'summary-row';
+    row.innerHTML = `<span>${escapeHtml(o.personName)} <span style="color:var(--text-dim);font-size:0.82rem;">(${escapeHtml(itemsStr)})</span></span><span class="val">${fmt(o.total)} CHF</span>`;
+    el.appendChild(row);
+  });
+  document.getElementById('grandTotal').textContent = fmt(grand) + ' CHF';
+}
+
+db.collection('orders').where('date', '==', todayStr()).onSnapshot(snap => {
+  todayOrdersData = snap.docs.map(d => d.data());
+  renderTodayOrders();
+});
+</script>
+</body>
+</html>
