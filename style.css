@@ -1,19 +1,33 @@
 :root {
-  --bg: #f7f5f2;
+  --bg: #ffffff;
   --card: #ffffff;
-  --text: #1f1b16;
-  --text-dim: #6b645c;
-  --border: #e8e2d9;
-  --accent: #c26b2f;
-  --accent-dim: #e9d3bc;
+  --text: #1a1a1a;
+  --text-dim: #6b6b6b;
+  --border: #ececec;
+  --accent: #f5c400;
+  --accent-text: #1a1a1a;
+  --accent-text-link: #8a6a00;
+  --accent-dim: #fdf0b8;
+  --accent-strong: #8a6a00;
   --green: #2f7a4f;
   --green-bg: #e4f3ea;
   --red: #b3432e;
   --red-bg: #fbe9e4;
-  --chip: #f1ede6;
+  --chip: #fff8dd;
 }
 
 * { box-sizing: border-box; }
+
+.site-header {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 6px;
+}
+.site-header .logo {
+  height: 38px;
+  max-width: 220px;
+  object-fit: contain;
+}
 
 body {
   margin: 0;
@@ -72,13 +86,13 @@ input[type="text"], input[type="number"], input[type="time"], select {
 
 button.primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-text);
   border: none;
   border-radius: 10px;
   padding: 12px;
   width: 100%;
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
 }
 button.primary:disabled {
@@ -244,7 +258,7 @@ button.secondary {
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--accent-dim);
-  color: var(--accent);
+  color: var(--accent-strong);
   margin-left: 6px;
 }
 
@@ -253,3 +267,34 @@ button.secondary {
 }
 
 .hidden { display: none; }
+
+.tip-bubble {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+  z-index: 1000;
+}
+
+.tip-popup {
+  position: fixed;
+  bottom: 86px;
+  right: 20px;
+  max-width: 220px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  z-index: 1000;
+}

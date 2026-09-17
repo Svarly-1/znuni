@@ -8,6 +8,10 @@
 </head>
 <body>
 
+<div class="site-header">
+  <img src="https://www.infra-com.ch/assets/sys-images/infra-com-swiss-logo.png" alt="Infra-Com Logo" class="logo">
+</div>
+
 <h1>🥐 Znüni Bestellung</h1>
 <div class="sub">Wähle dich aus, bestelle, und bezahle direkt per Twint.</div>
 
@@ -49,14 +53,16 @@
     <img id="qrImg" src="" alt="Foto">
     <div class="status" id="shopperPhone" style="font-size:0.95rem;font-weight:600;margin-top:8px;"></div>
   </div>
-  <button class="secondary" id="tipBtn">💛 Trinkgeld geben</button>
-  <div class="status hidden" id="tipBox" style="font-weight:600;"></div>
   <button class="secondary" id="editBtn">Bestellung bearbeiten</button>
 </div>
 
 <div class="sub" style="text-align:center;margin-top:24px;">
-  Bei Fragen oder Wünschen für die Einkaufsliste: <a href="mailto:hueseyin.oezel@infra-com.ch" style="color:var(--accent);">hueseyin.oezel@infra-com.ch</a>
+  Bei Fragen oder Wünschen für die Einkaufsliste: <a href="mailto:hueseyin.oezel@infra-com.ch" style="color:var(--accent-text-link);">Hüseyin (hueseyin.oezel@infra-com.ch)</a>
 </div>
+
+<!-- Trinkgeld Sprechblase unten rechts -->
+<button id="tipBubble" class="tip-bubble" title="Trinkgeld geben">💬</button>
+<div id="tipPopup" class="tip-popup hidden"></div>
 
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
@@ -242,16 +248,29 @@ function showConfirmation(total) {
   document.getElementById('shopperName').textContent = validShopperToday ? shopper.name : '(noch nicht festgelegt)';
   document.getElementById('qrImg').src = validShopperToday && shopper.qrBase64 ? shopper.qrBase64 : '';
   document.getElementById('shopperPhone').textContent = validShopperToday && shopper.phone ? 'Twint: ' + shopper.phone : '';
-  document.getElementById('tipBox').classList.add('hidden');
-  document.getElementById('tipBox').textContent = validShopperToday && shopper.phone
-    ? 'Trinkgeld ebenfalls an: ' + shopper.phone
-    : 'Nummer noch nicht hinterlegt.';
   orderCard.classList.add('hidden');
   confirmCard.classList.remove('hidden');
 }
 
-document.getElementById('tipBtn').onclick = () => {
-  document.getElementById('tipBox').classList.toggle('hidden');
+// ---------- Trinkgeld-Sprechblase ----------
+const tipBubble = document.getElementById('tipBubble');
+const tipPopup = document.getElementById('tipPopup');
+
+function renderTipPopup() {
+  const shopper = people.find(p => p.id === settings.todayShopperId);
+  const validShopperToday = settings.todayDate === todayStr() && shopper;
+  if (validShopperToday && shopper.phone) {
+    tipPopup.innerHTML = `Trinkgeld für <b>${escapeHtml(shopper.name)}</b><br>Twint: <b>${escapeHtml(shopper.phone)}</b>`;
+  } else if (validShopperToday) {
+    tipPopup.innerHTML = `Trinkgeld für <b>${escapeHtml(shopper.name)}</b><br>Nummer noch nicht hinterlegt.`;
+  } else {
+    tipPopup.innerHTML = `Wer heute einkauft ist noch nicht festgelegt.`;
+  }
+}
+
+tipBubble.onclick = () => {
+  renderTipPopup();
+  tipPopup.classList.toggle('hidden');
 };
 
 document.getElementById('editBtn').onclick = () => {
