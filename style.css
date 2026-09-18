@@ -1,5 +1,5 @@
 :root {
-  --bg: #ffef00;
+  --bg: #ffffff;
   --card: #ffffff;
   --text: #1a1a1a;
   --text-dim: #6b6b6b;
@@ -21,11 +21,14 @@
 .site-header {
   display: flex;
   justify-content: flex-start;
-  margin-bottom: 6px;
+  align-items: center;
+  margin: 0 -16px 16px;
+  padding: 12px 16px;
+  background: #ffffff;
 }
 .site-header .logo {
-  height: 38px;
-  max-width: 220px;
+  height: 34px;
+  max-width: 200px;
   object-fit: contain;
 }
 
@@ -34,7 +37,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  padding: 16px;
+  padding: 0 16px 16px;
   max-width: 640px;
   margin: 0 auto;
 }
@@ -275,12 +278,12 @@ button.secondary {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-text);
+  background: #1a1a1a;
+  color: #ffffff;
   border: none;
   font-size: 1.4rem;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
   z-index: 1000;
 }
 
